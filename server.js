@@ -18,6 +18,8 @@ const getType = (ext) => {
         case '.jpg':
         case '.jpeg':
           return 'image/jpeg';
+        case '.webp':
+            return 'image/webp';
         case '.gif':
           return 'image/gif';
         case '.mp4':
@@ -42,6 +44,25 @@ const recordLog = (log) => {
 const server = http.createServer((req, res) => {
 
     const ip = req.socket.remoteAddress;
+
+    if(req.url == "/") {
+        fs.readdir(root, (err, files) => {
+            if (err) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'text/plain');
+                res.end('Server error');
+                console.log(err);
+                return;
+            } 
+            let result = "Files that can be accessed from this directory: \n";
+            files.forEach((file) => {
+                result += file + "\n";
+            });
+            console.log(result);
+            res.end(result + "_________  End of list ____________");
+          });
+          return;
+    }
 
     const filePath =  root + req.url ;
 
