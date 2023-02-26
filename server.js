@@ -16,6 +16,7 @@ const getType = (ext) => {
         case '.png':
           return 'image/png';
         case '.jpg':
+          return 'image/jpg';
         case '.jpeg':
           return 'image/jpeg';
         case '.webp':
@@ -44,6 +45,15 @@ const recordLog = (log) => {
 const server = http.createServer((req, res) => {
 
     const ip = req.socket.remoteAddress;
+
+
+    if(req.method != "GET") {
+        recordLog("Invalid Method, ip: " + ip);
+        res.statusCode = 405;
+        res.setHeader('Content-Type', 'text/plain');
+        res.end('Invalid Method (only \'GET\' is valid)');
+        return;
+    }
 
     if(req.url == "/") {
         fs.readdir(root, (err, files) => {
