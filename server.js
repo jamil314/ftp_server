@@ -3,131 +3,124 @@ const fs = require('fs');
 const path = require('path');
 const root = '../../../jamil/public';
 
-const getType = (ext) => {
-    switch (ext.toLowerCase()) {
-        case '.txt':
-          return 'text/plain';
-        case '.html':
-          return 'text/html';
-        case '.js':
-          return 'text/javascript';
-        case '.css':
-          return 'text/css';
-        case '.png':
-          return 'image/png';
-        case '.jpg':
-          return 'image/jpg';
-        case '.jpeg':
-          return 'image/jpeg';
-        case '.webp':
-            return 'image/webp';
-        case '.gif':
-          return 'image/gif';
-        case '.mp4':
-            return 'video/mp4';
-        default:
-          return 'application/octet-stream';
-      }
+const ContentType = {
+	'.txt' : 'text/plain',
+	'.html' : 'text/html',
+	'.js' : 'text/javascript',
+	'.css' : 'text/css',
+	'.png' : 'image/png',
+	'.jpg' : 'image/jpg',
+	'.jpeg' : 'image/jpeg',
+	'.webp' : 'image/webp',
+	'.gif' : 'image/gif',
+	'.mp4' : 'video/mp4',
 }
 
-const recordLog = (log) => {
+const getType = (ext) => {
+	console.log(ext, ContentType[ext]);
+	return ContentType[ext] ;
+}
 
-    console.log(log);
+const reply = (res, resCode, message, note, clientIp, reqURL, reqMethod, fileSize, fileType) => {
 
-    fs.appendFile(root + '/log.txt' , log + '\n', (err) => {
-        if(err){
-            console.log(err);
-            return;
-        }
-    });
+	console.log(resCode, message, clientIp, reqMethod, reqURL);
+	
+
+	fs.appendFile(root + '/log.txt', 
+		reqMethod.padEnd(10, ' ') + "| "
+		+ reqURL.padEnd(35, ' ') + "| "
+		+ clientIp.padEnd(25, ' ') + "| "
+		+ ( resCode.toString() ).padEnd(5, ' ') + "| "
+		+ note.padEnd(25, ' ') + "| "
+		+ ((fileSize || "Unknown ") + " bytes").padEnd(15, ' ') + "| "
+		+ (fileType || "Unknown" ).padEnd(20, ' ') 
+		+ '\n'
+	, err => {
+		if( err ) {
+			console.log( err );
+			return;
+		}
+	});
+
+	res.statusCode = resCode;
+
+	if( resCode == 200) {
+
+		res.setHeader('Content-Type', fileType || 'application/octet-stream');
+		res.setHeader('Content-Length', fileSize);
+
+		const readStream = fs.createReadStream(root + reqURL);
+		readStream.pipe(res)
+
+	} else res.end(message);
+
 }
 
 const server = http.createServer((req, res) => {
 
-    const ip = req.socket.remoteAddress;
+    const clientIp = req.socket.remoteAddress;
+	const {method, url} = req;
 
+	console.log(clientIp, method, url);
 
-    if(req.method != "GET") {
-        recordLog("Invalid Method, ip: " + ip);
-        res.statusCode = 405;
-        res.setHeader('Content-Type', 'text/plain');
-        res.end('Invalid Method (only \'GET\' is valid)');
+    if(method != "GET") {
+		reply(res, 405, `Invalid Method: ${method} (Only 'GET' si valid)`, `Invalid Method`, clientIp, url, method);
         return;
     }
 
     if(req.url == "/") {
         fs.readdir(root, (err, files) => {
+
             if (err) {
-                res.statusCode = 500;
-                res.setHeader('Content-Type', 'text/plain');
-                res.end('Server error');
-                console.log(err);
+				console.log(err);
+				reply(res, 500, err, 'Server Error', clientIp, 'Directory', method);
                 return;
             } 
+
             let result = "Files that can be accessed from this directory: \n";
             files.forEach((file) => {
                 result += file + "\n";
             });
-            console.log(result);
-            res.end(result + "_________  End of list ____________");
-          });
-          return;
+
+			reply(res, 222, result, 'Directory Query', clientIp, 'Directory', method);
+			return;    
+		});
+		return;
     }
 
-    const filePath =  root + req.url ;
-
-    console.log(req.url);
-    console.log(filePath);
-
-    fs.access(filePath, fs.constants.F_OK, (err) => {
+    const filePath =  root + url ;
+	
+    fs.access(filePath, (err) => {
         if (err) {
 
-            recordLog('url: ' + req.url + ", status code: " + 404 + ", client ip: " + ip);
-
-            res.statusCode = 404;
-            res.setHeader('Content-Type', 'text/plain');
-            res.end('File not found');
+			console.log(err);
+			
+			reply(res, 404, 'The requested resource can not be found in the server !! ', 'Resource not Found', clientIp, url, method);
+			return;
 
         } else {  
 
-            fs.access(filePath, fs.constants.R_OK, (err) => {
-                
-                if (err) {
+			fs.stat(filePath, (err, stats) => {
+				
+				if (err) {
+					console.log(err);
+					reply(res, 500, err, 'Server Error', clientIp, 'Directory', method);
+					return;
+				} 
 
-                    recordLog('url: ' + req.url + ", status code: " + 403 + ", client ip: " + ip);
-
-                    res.statusCode = 403;
-                    res.setHeader('Content-Type', 'text/plain');
-                    res.end('Forbidden');
-
-                } else {
-
-                    fs.stat(filePath, (err, stats) => {
-                        if (err) {
-                            res.statusCode = 500;
-                            res.setHeader('Content-Type', 'text/plain');
-                            res.end('Server error');
-                        }
-                      
-                        const fileType = getType ( path.extname(filePath) );
-                        const fileSize = stats.size;
-
-                        recordLog('Url: ' + req.url + ", Type: " + fileType + ", Size: " + fileSize + " bytes, Status Code: " + 200 + ", client ip: " + ip);
-
-                        res.statusCode = 200;
-                        res.setHeader('Content-Type', fileType)
-                        const readStream = fs.createReadStream(filePath);
-                        readStream.pipe(res)
-                
-                      });
-
-                }
-            });
+				const fileType = getType ( path.extname(filePath).toLowerCase() ) ;
+				const fileSize = stats.size;
+				
+				reply(res, 200, '', 'OK', clientIp, url, method, fileSize, fileType);
+			});
             
         }
     });
 });
 
-server.listen(3000, () => {
-  console.log('Server running on port 3000');
+const PORT = 3000;
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
+
