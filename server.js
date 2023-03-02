@@ -1,124 +1,143 @@
 const http = require('http');
 const fs = require('fs');
-const path = require('path');
-const root = '../../../jamil/public';
+const root = 'files';
+const PORT = 3000;
 
-const ContentType = {
-	'.txt' : 'text/plain',
-	'.html' : 'text/html',
-	'.js' : 'text/javascript',
-	'.css' : 'text/css',
-	'.png' : 'image/png',
-	'.jpg' : 'image/jpg',
-	'.jpeg' : 'image/jpeg',
-	'.webp' : 'image/webp',
-	'.gif' : 'image/gif',
-	'.mp4' : 'video/mp4',
-}
 
-const getType = (ext) => {
-	console.log(ext, ContentType[ext]);
-	return ContentType[ext] ;
-}
-
-const reply = (res, resCode, message, note, clientIp, reqURL, reqMethod, fileSize, fileType) => {
-
-	console.log(resCode, message, clientIp, reqMethod, reqURL);
-	
-
-	fs.appendFile(root + '/log.txt', 
-		reqMethod.padEnd(10, ' ') + "| "
-		+ reqURL.padEnd(35, ' ') + "| "
-		+ clientIp.padEnd(25, ' ') + "| "
-		+ ( resCode.toString() ).padEnd(5, ' ') + "| "
-		+ note.padEnd(25, ' ') + "| "
-		+ ((fileSize || "Unknown ") + " bytes").padEnd(15, ' ') + "| "
-		+ (fileType || "Unknown" ).padEnd(20, ' ') 
-		+ '\n'
-	, err => {
-		if( err ) {
-			console.log( err );
-			return;
-		}
-	});
-
-	res.statusCode = resCode;
-
-	if( resCode == 200) {
-
-		res.setHeader('Content-Type', fileType || 'application/octet-stream');
-		res.setHeader('Content-Length', fileSize);
-
-		const readStream = fs.createReadStream(root + reqURL);
-		readStream.pipe(res)
-
-	} else res.end(message);
-
-}
 
 const server = http.createServer((req, res) => {
-
-    const clientIp = req.socket.remoteAddress;
+	
 	const {method, url} = req;
+	
+	let entry = {
+		'clientIp' : req.socket.remoteAddress,
+		'time' : new Date().toLocaleString("en-GB", { timeZone: "Asia/Dhaka" } ),
+		'method' : method,
+		'url' : url,
+		'resCode' : 444,
+	}
 
-	console.log(clientIp, method, url);
+	while( entry.url != "" && entry.url[0] == '/')
+		entry.url = entry.url.slice(1);
 
     if(method != "GET") {
-		reply(res, 405, `Invalid Method: ${method} (Only 'GET' si valid)`, `Invalid Method`, clientIp, url, method);
+		reply ( res, 405 );
+		entry.resCode = 405;
+		log (entry);
         return;
     }
 
-    if(req.url == "/") {
-        fs.readdir(root, (err, files) => {
-
-            if (err) {
-				console.log(err);
-				reply(res, 500, err, 'Server Error', clientIp, 'Directory', method);
-                return;
-            } 
-
-            let result = "Files that can be accessed from this directory: \n";
-            files.forEach((file) => {
-                result += file + "\n";
-            });
-
-			reply(res, 222, result, 'Directory Query', clientIp, 'Directory', method);
-			return;    
-		});
-		return;
-    }
-
-    const filePath =  root + url ;
+	const filePath =  root + url ;
 	
-    fs.access(filePath, (err) => {
-        if (err) {
+	fs.stat(filePath, (err, stats) => {
+		if ( err ) {
+			if( err.code == 'ENOENT' ) {
+				reply ( res, 404 );
+				entry.resCode = 404;
+				log (entry);
+			} else {
+				reply ( res, 500 );
+				entry.resCode = 500;
+				log (entry);
+			}
+		} else if(stats.isDirectory()) {
 
-			console.log(err);
-			
-			reply(res, 404, 'The requested resource can not be found in the server !! ', 'Resource not Found', clientIp, url, method);
-			return;
+			entry.url += "/";
 
-        } else {  
+			fs.readdir(filePath, (err, files) => {
 
-			fs.stat(filePath, (err, stats) => {
-				
 				if (err) {
-					console.log(err);
-					reply(res, 500, err, 'Server Error', clientIp, 'Directory', method);
+					if(err.code == 'EACCES') {
+						reply ( res, 401 );
+						entry.resCode = 401;
+						log (entry);
+					} else {
+						reply ( res, 500 );
+						entry.resCode = 500;
+						log (entry);
+					}
 					return;
 				} 
+	
+				let result = "<div> <h1>Files on this directory: </h1> <ol> ";
+				let fileCount = 0;
+				files.forEach((file) => {
+					fileCount++;
+					result += `<li> <a href = "http://localhost:3000/${url}/${file}"> ${file} </a> </li>`;
+				});
 
-				const fileType = getType ( path.extname(filePath).toLowerCase() ) ;
-				const fileSize = stats.size;
+				result += "</ol> <h3> ~~~~~~~~~~~~~~~ End of List ~~~~~~~~~~~~~~~~~~~~~  </h3> </div>"
+				res.end(fileCount? result : "<h1> Empty Directory </h1>");
+
+				entry.resCode = 200;
+				log (entry);
 				
-				reply(res, 200, '', 'OK', clientIp, url, method, fileSize, fileType);
+				return;    
 			});
-            
-        }
-    });
+
+
+		} else if(stats.isFile()) {
+			const readStream = fs.createReadStream( filePath );
+			
+			readStream.pipe(res);
+			
+			readStream.on('open', () => {
+				res.setHeader('Content-Length', stats.size);
+			})
+
+			readStream.on('close', () => {
+				entry.resCode = 200;
+				log (entry);
+			})
+
+			readStream.on("error", err => {
+				if(err.code == 'EACCES') {
+					reply ( res, 401 );
+					entry.resCode = 401;
+					log (entry);
+				} else {
+					reply ( res, 500 );
+					entry.resCode = 500;
+					log (entry);
+				}
+				return;
+			})
+
+		} else {
+			reply ( res, 400 );
+			entry.resCode = 400;
+			log (entry);
+		}
+	})
 });
 
-const PORT = 3000;
+const resMessage = {
+	400 : 'Bad request !! Requested resource is neither a file nor a directory.',
+	401 : 'Unauthorized content !!',
+	404 : 'Content not found !!',
+	405 : `Invalid Request Method !! only "GET" is valid.`,
+	500 : 'Unknown error',
+}
+
+const reply = (res, resCode) => {
+	res.statusCode = resCode;
+	res.end(resMessage[resCode]);
+}
+
+const log = ( entry ) => {
+	fs.appendFile('log.txt', 
+		 		entry.time.padEnd(25, ' ')
+		+ "| " +entry.clientIp.padEnd(25, ' ')
+		+ "| " +entry.method.padEnd(10, ' ')
+		+ "| " +`${entry.resCode}`.padEnd(5, ' ')
+		+ "| " +entry.url
+		+"\n"
+	, err => {
+		if(err){
+			console.log(err);
+		}
+	})
+}
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
