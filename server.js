@@ -7,8 +7,10 @@ const PORT = 3000;
 
 const server = http.createServer((req, res) => {
 	
-	const {method, url} = req;
+	let {method, url} = req;
 	
+	url = url.replaceAll("%20", " ");
+
 	let entry = {
 		'clientIp' : req.socket.remoteAddress,
 		'time' : new Date().toLocaleString("en-GB", { timeZone: "Asia/Dhaka" } ),
