@@ -8,6 +8,7 @@ const PORT = 3000;
 const server = http.createServer((req, res) => {
 	
 	let {method, url} = req;
+	const {host} = req.headers;
 	
 	url = url.replaceAll("%20", " ");
 
@@ -18,9 +19,6 @@ const server = http.createServer((req, res) => {
 		'url' : url,
 		'resCode' : 444,
 	}
-
-	while( entry.url != "" && entry.url[0] == '/')
-		entry.url = entry.url.slice(1);
 
     if(method != "GET") {
 		reply ( res, 405 );
@@ -44,8 +42,6 @@ const server = http.createServer((req, res) => {
 			}
 		} else if(stats.isDirectory()) {
 
-			entry.url += "/";
-
 			fs.readdir(filePath, (err, files) => {
 
 				if (err) {
@@ -65,7 +61,7 @@ const server = http.createServer((req, res) => {
 				let fileCount = 0;
 				files.forEach((file) => {
 					fileCount++;
-					result += `<li> <a href = "http://localhost:3000/${url}/${file}"> ${file} </a> </li>`;
+					result += `<li> <a href = "http://${host}${url}/${file}"> ${file} </a> </li>`;
 				});
 
 				result += "</ol> <h3> ~~~~~~~~~~~~~~~ End of List ~~~~~~~~~~~~~~~~~~~~~  </h3> </div>"
