@@ -93,6 +93,10 @@ const server = http.createServer((req, res) => {
 					reply ( res, 401 );
 					entry.resCode = 401;
 					log (entry);
+				} else if( err.code == 'ENOENT' ) {
+					reply ( res, 404 );
+					entry.resCode = 404;
+					log (entry);
 				} else {
 					reply ( res, 500 );
 					entry.resCode = 500;
