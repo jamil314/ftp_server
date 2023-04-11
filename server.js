@@ -1,12 +1,12 @@
 const http = require('http');
 const fs = require('fs');
-const root = 'files';
-const PORT = 3000;
+const root = '.';
+const PORT = 314;
 
 
 
 const server = http.createServer((req, res) => {
-	
+
 	let {method, url} = req;
 	const {host} = req.headers;
 	
@@ -26,6 +26,13 @@ const server = http.createServer((req, res) => {
 		log (entry);
         return;
     }
+
+	if(url == '//log.txt' || url == '//server.js'){
+		reply ( res, 403 );
+		entry.resCode = 403;
+		log (entry);
+		return;
+	}
 
 	const filePath =  root + url ;
 	
@@ -59,6 +66,7 @@ const server = http.createServer((req, res) => {
 	
 				let result = "<div> <h1>Files on this directory: </h1> <ol> ";
 				let fileCount = 0;
+				files.sort();
 				files.forEach((file) => {
 					fileCount++;
 					result += `<li> <a href = "http://${host}${url}/${file}"> ${file} </a> </li>`;
@@ -75,19 +83,34 @@ const server = http.createServer((req, res) => {
 
 
 		} else if(stats.isFile()) {
-			const readStream = fs.createReadStream( filePath );
+
+			const {range} = req.headers;
+			const total = stats.size;
+			let readStream = fs.createReadStream(filePath);
 			
+			if (range) {
+				const[partialstart, partialend] =  range.replace(/bytes=/, "").split("-");
+				const start = parseInt(partialstart, 10);
+				const end = partialend ? parseInt(partialend, 10) : total-1;
+				const chunksize = (end-start)+1;
+				readStream = fs.createReadStream(filePath, {start: start, end: end});
+				
+				res.writeHead(206, {
+					'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
+					'Accept-Ranges': 'bytes', 'Content-Length': chunksize,
+				});
+		
+			} else {
+				res.writeHead(200, { 'Content-Length': total });
+			}
+
 			readStream.pipe(res);
 			
-			readStream.on('open', () => {
-				res.setHeader('Content-Length', stats.size);
-			})
-
 			readStream.on('close', () => {
 				entry.resCode = 200;
 				log (entry);
 			})
-
+			
 			readStream.on("error", err => {
 				if(err.code == 'EACCES') {
 					reply ( res, 401 );
@@ -104,7 +127,6 @@ const server = http.createServer((req, res) => {
 				}
 				return;
 			})
-
 		} else {
 			reply ( res, 400 );
 			entry.resCode = 400;
@@ -144,4 +166,3 @@ const log = ( entry ) => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
